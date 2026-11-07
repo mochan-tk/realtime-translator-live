@@ -1,0 +1,1285 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="color-scheme" content="light dark" />
+    <link rel="icon" href="data:," />
+    <title>リアルタイム翻訳ライブ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=IBM+Plex+Mono:wght@400;600&display=swap" rel="stylesheet" />
+    <style>
+      :root{
+        --bg:#f4f2ec; --bg2:#eceade; --panel:#fffdf7; --panel2:#f8f6ee;
+        --ink:#1d1a15; --ink2:#5c564a; --ink3:#8a8375;
+        --line:#ddd6c4; --line2:#c9c0aa;
+        --red:#c62f1d; --red-soft:#fbeae7;
+        --teal:#0e6e5c; --teal-soft:#e2f1ec;
+        --amber:#9a6206; --amber-soft:#fbf0d7;
+        --err:#b3261e; --err-soft:#fbe9e7;
+        --ok:#0e6e5c;
+        --shadow:0 1px 2px rgba(29,26,21,.06),0 8px 24px rgba(29,26,21,.07);
+        --radius:14px;
+      }
+      @media (prefers-color-scheme: dark){
+        :root{
+          --bg:#16150f; --bg2:#100f0b; --panel:#201e16; --panel2:#26231a;
+          --ink:#f0ead9; --ink2:#b8b09b; --ink3:#857e6a;
+          --line:#3a3627; --line2:#4c4732;
+          --red:#ff6a55; --red-soft:#3a1d17;
+          --teal:#4ec9ae; --teal-soft:#123129;
+          --amber:#f0b95a; --amber-soft:#38290e;
+          --err:#ff8a7a; --err-soft:#3a1a15;
+          --ok:#4ec9ae;
+          --shadow:0 1px 2px rgba(0,0,0,.35),0 8px 24px rgba(0,0,0,.35);
+        }
+      }
+      *{box-sizing:border-box}
+      html{-webkit-text-size-adjust:100%}
+      body{
+        margin:0; background:linear-gradient(180deg,var(--bg),var(--bg2));
+        color:var(--ink);
+        font-family:"Noto Sans JP",-apple-system,BlinkMacSystemFont,"Hiragino Kaku Gothic ProN","Yu Gothic",sans-serif;
+        line-height:1.55;
+      }
+      .wrap{max-width:1060px;margin:0 auto;padding:18px 16px 56px}
+      .mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+      /* --- mic-required banner --- */
+      .micreq{
+        display:flex;gap:12px;align-items:flex-start;
+        background:var(--red-soft);border:1.5px solid var(--red);
+        border-radius:var(--radius);padding:13px 15px;margin-bottom:14px;
+      }
+      .micreq svg{flex:0 0 auto;margin-top:2px}
+      .micreq b{color:var(--red)}
+      .micreq p{margin:2px 0 0;font-size:.9rem}
+      .micreq .sub{color:var(--ink2);font-size:.82rem}
+
+      /* --- status strip --- */
+      .statusbar{
+        display:flex;flex-wrap:wrap;gap:10px 18px;align-items:center;
+        background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+        padding:12px 16px;box-shadow:var(--shadow);margin-bottom:14px;
+      }
+      .statepill{display:inline-flex;align-items:center;gap:8px;font-weight:700;font-size:.95rem}
+      .dot{width:11px;height:11px;border-radius:50%;background:var(--ink3);flex:0 0 auto}
+      .dot.live{background:var(--red);animation:pulse 1.4s ease-in-out infinite}
+      .dot.connecting{background:var(--amber);animation:pulse .7s ease-in-out infinite}
+      .dot.error{background:var(--err)}
+      @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+      @media (prefers-reduced-motion: reduce){.dot.live,.dot.connecting{animation:none}}
+      .timerbox{margin-left:auto;text-align:right}
+      .timer{font-size:1.65rem;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:.02em}
+      .timer.warn{color:var(--red)}
+      .timerlabel{font-size:.72rem;color:var(--ink2);letter-spacing:.08em}
+      .guardtrack{height:6px;border-radius:99px;background:var(--line);overflow:hidden;margin-top:6px;min-width:170px}
+      .guardfill{height:100%;width:0%;background:var(--teal);border-radius:99px;transition:width .4s linear}
+      .guardfill.warn{background:var(--amber)}
+      .guardfill.danger{background:var(--red)}
+
+      .warnbanner{
+        display:none;background:var(--amber-soft);border:1.5px solid var(--amber);color:var(--ink);
+        border-radius:var(--radius);padding:11px 15px;margin-bottom:14px;font-size:.92rem;
+      }
+      .warnbanner.show{display:block}
+      .warnbanner b{color:var(--amber)}
+      .errbanner{
+        display:none;background:var(--err-soft);border:1.5px solid var(--err);
+        border-radius:var(--radius);padding:11px 15px;margin-bottom:14px;font-size:.92rem;white-space:pre-wrap;word-break:break-word;
+      }
+      .errbanner.show{display:block}
+      .errbanner b{color:var(--err)}
+
+      /* --- panels --- */
+      .panel{
+        background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+        box-shadow:var(--shadow);padding:16px;margin-bottom:14px;
+      }
+      .panel h2{font-size:.8rem;letter-spacing:.14em;color:var(--ink2);margin:0 0 12px;font-weight:700}
+      .panel h2 .h2note{letter-spacing:0;text-transform:none;font-weight:400;color:var(--ink3);font-size:.78rem;margin-left:8px}
+
+      /* language picker */
+      .langrow{display:flex;gap:10px;align-items:stretch}
+      .langfield{flex:1 1 0;min-width:0}
+      .langfield label{display:block;font-size:.75rem;color:var(--ink2);margin-bottom:5px;font-weight:700;letter-spacing:.06em}
+      select{
+        width:100%;appearance:none;-webkit-appearance:none;
+        background:var(--panel2);color:var(--ink);border:1.5px solid var(--line2);border-radius:10px;
+        padding:12px 34px 12px 12px;font-size:1rem;font-family:inherit;font-weight:500;
+        background-image:url("data:image/svg+xml;charset=utf8,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238a8375' stroke-width='2'/%3E%3C/svg%3E");
+        background-repeat:no-repeat;background-position:right 12px center;
+      }
+      select:disabled{opacity:.55}
+      .swapbtn{
+        align-self:flex-end;flex:0 0 auto;width:46px;height:47px;border-radius:10px;cursor:pointer;
+        border:1.5px solid var(--line2);background:var(--panel2);color:var(--ink);
+        display:flex;align-items:center;justify-content:center;
+      }
+      .swapbtn:disabled{opacity:.45;cursor:default}
+      .swapbtn:not(:disabled):active{transform:scale(.94)}
+      .presets{display:flex;flex-wrap:wrap;gap:8px;margin-top:13px}
+      .chip{
+        border:1.5px solid var(--line2);background:var(--panel2);color:var(--ink);cursor:pointer;
+        border-radius:99px;padding:7px 14px;font-size:.85rem;font-family:inherit;font-weight:500;
+      }
+      .chip:disabled{opacity:.45;cursor:default}
+      .chip.active{border-color:var(--teal);background:var(--teal-soft);color:var(--teal);font-weight:700}
+      .langnote{font-size:.82rem;color:var(--ink2);margin:11px 0 0}
+      .langwarn{display:none;margin-top:10px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:10px;padding:9px 12px;font-size:.86rem}
+      .langwarn.show{display:block}
+
+      /* transport controls */
+      .transport{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
+      .bigbtn{
+        flex:1 1 220px;border:none;cursor:pointer;border-radius:12px;padding:17px 20px;
+        font-family:inherit;font-size:1.15rem;font-weight:900;letter-spacing:.04em;
+        display:inline-flex;align-items:center;justify-content:center;gap:10px;
+      }
+      .bigbtn.start{background:var(--red);color:#fff}
+      .bigbtn.start:disabled{background:var(--line2);color:var(--panel);cursor:default}
+      .bigbtn.stop{background:var(--ink);color:var(--bg)}
+      .sidecontrols{display:flex;flex-wrap:wrap;gap:14px 20px;align-items:center}
+      .ctl{display:flex;align-items:center;gap:8px;font-size:.85rem;color:var(--ink2);font-weight:500}
+      .ctl input[type="range"]{width:110px;accent-color:var(--teal)}
+      .smallbtn{
+        border:1.5px solid var(--line2);background:var(--panel2);color:var(--ink);cursor:pointer;
+        border-radius:9px;padding:8px 13px;font-size:.85rem;font-family:inherit;font-weight:600;
+        white-space:nowrap;flex:0 0 auto;
+      }
+      .smallbtn:disabled{opacity:.45;cursor:default}
+      .smallbtn.on{border-color:var(--red);color:var(--red);background:var(--red-soft)}
+      .meterwrap{flex:1 1 130px;min-width:120px}
+      .meterlabel{font-size:.72rem;color:var(--ink2);letter-spacing:.06em;margin-bottom:4px;font-weight:700}
+      .meter{height:8px;border-radius:99px;background:var(--line);overflow:hidden}
+      .meterfill{height:100%;width:0%;background:var(--teal)}
+
+      /* live transcripts */
+      .livegrid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-bottom:14px}
+      @media (max-width:720px){.livegrid{grid-template-columns:1fr}}
+      .livebox{
+        background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);
+        box-shadow:var(--shadow);padding:15px 16px;min-height:172px;display:flex;flex-direction:column;
+      }
+      .livebox.target{border:1.5px solid var(--teal)}
+      .livehead{display:flex;align-items:baseline;gap:8px;margin-bottom:8px}
+      .livetag{font-size:.72rem;font-weight:900;letter-spacing:.12em;padding:3px 9px;border-radius:6px;background:var(--panel2);border:1px solid var(--line2);color:var(--ink2)}
+      .livebox.target .livetag{background:var(--teal);border-color:var(--teal);color:#fff}
+      @media (prefers-color-scheme: dark){.livebox.target .livetag{color:#0c201b}}
+      .livelang{font-weight:700;font-size:.95rem}
+      .livestate{margin-left:auto;font-size:.75rem;color:var(--ink3)}
+      .livetext{font-size:1.06rem;line-height:1.7;white-space:pre-wrap;word-break:break-word;flex:1}
+      .livebox.target .livetext{font-size:1.22rem;font-weight:500}
+      .livetext .placeholder{color:var(--ink3);font-size:.92rem;font-weight:400}
+      .caret{display:inline-block;width:8px;height:1.05em;background:var(--red);vertical-align:text-bottom;margin-left:2px;animation:pulse 1s steps(1) infinite}
+      @media (prefers-reduced-motion: reduce){.caret{animation:none}}
+
+      /* history */
+      .histtools{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+      .diagtools{display:flex;gap:8px;margin-left:auto;flex-wrap:wrap}
+      .histhead{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px}
+      .histhead h2{flex:1 1 220px}
+      @media (max-width:560px){
+        .histtools,.diagtools{margin-left:0}
+      }
+      .histhead h2{margin:0}
+      .histlist{display:flex;flex-direction:column;gap:0;margin-top:10px}
+      .histitem{padding:11px 2px;border-top:1px dashed var(--line)}
+      .histitem:first-child{border-top:none}
+      .histmeta{font-size:.72rem;color:var(--ink3);margin-bottom:3px}
+      .histsrc{color:var(--ink2);font-size:.92rem}
+      .histtgt{font-size:1.02rem;font-weight:500;margin-top:2px}
+      .histempty{color:var(--ink3);font-size:.9rem;padding:8px 0 2px}
+
+      /* setup */
+      .steps{margin:0;padding-left:1.3em;font-size:.93rem}
+      .steps li{margin:7px 0}
+      .steps code,.inlinecode{font-family:"IBM Plex Mono",ui-monospace,monospace;font-size:.86em;background:var(--panel2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;word-break:break-all}
+      .keyrow{display:flex;flex-wrap:wrap;gap:9px;margin-top:13px}
+      .keyrow input{
+        flex:1 1 260px;background:var(--panel2);color:var(--ink);border:1.5px solid var(--line2);
+        border-radius:10px;padding:11px 12px;font-size:.95rem;font-family:"IBM Plex Mono",ui-monospace,monospace;
+      }
+      .keystatus{font-size:.88rem;margin-top:10px}
+      .keystatus .ok{color:var(--ok);font-weight:700}
+      .keystatus .none{color:var(--amber);font-weight:700}
+      .keynote{font-size:.82rem;color:var(--ink2);margin-top:8px}
+
+      /* diag log */
+      .diaglog{
+        background:#141310;color:#d8d2c0;border-radius:10px;padding:12px 13px;
+        font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace;font-size:.76rem;line-height:1.65;
+        height:260px;overflow-y:auto;white-space:pre-wrap;word-break:break-word;
+      }
+      @media (prefers-color-scheme: dark){.diaglog{background:#0b0a07}}
+      .diaglog .t{color:#8f8875}
+      .diaglog .lv-info{color:#d8d2c0}
+      .diaglog .lv-ok{color:#7fe3c3}
+      .diaglog .lv-warn{color:#ffd479}
+      .diaglog .lv-error{color:#ff9a8a}
+      .diaglog .lv-event{color:#9fc7ff}
+      .diagtools{display:flex;gap:8px}
+
+      footer{color:var(--ink3);font-size:.8rem;margin-top:20px;line-height:1.7}
+      footer a{color:var(--teal)}
+      .toast{
+        position:fixed;left:50%;bottom:22px;transform:translateX(-50%) translateY(16px);
+        background:var(--ink);color:var(--bg);padding:10px 18px;border-radius:99px;font-size:.88rem;font-weight:600;
+        opacity:0;pointer-events:none;transition:opacity .25s,transform .25s;z-index:50;max-width:92vw;text-align:center;
+      }
+      .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+      .playbanner{display:none;background:var(--red);color:#fff;border-radius:var(--radius);padding:14px 16px;margin-bottom:14px;align-items:center;gap:12px;flex-wrap:wrap}
+      .playbanner.show{display:flex}
+      .playbanner b{font-size:1rem}
+      .playbanner button{background:#fff;color:var(--red);border:none;border-radius:10px;padding:11px 18px;font-family:inherit;font-weight:900;font-size:1rem;cursor:pointer}
+      .playbackpill{font-size:.8rem;font-weight:700;padding:4px 10px;border-radius:99px;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2)}
+      .playbackpill.ok{border-color:var(--teal);color:var(--teal);background:var(--teal-soft)}
+      .playbackpill.blocked{border-color:var(--red);color:var(--red);background:var(--red-soft)}
+      .histkind{font-size:.7rem;font-weight:900;letter-spacing:.08em;padding:2px 7px;border-radius:5px;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2);margin-right:6px}
+      .histkind.tgt{ background:var(--teal);border-color:var(--teal);color:#fff}
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+
+      <!-- マイク必須の明示 -->
+      <div class="micreq" role="note">
+        <svg width="26" height="26" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3" fill="#c62f1d"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" stroke="#c62f1d" stroke-width="2" stroke-linecap="round"/></svg>
+        <div>
+          <b>マイク必須です。</b>このアプリは同時通訳専用で、キーボード入力では使えません。
+          <p>話し続けると、訳した音声がその場で流れ続けます（OpenAI Realtime API／翻訳専用セッション）。開始時にブラウザのマイク許可ダイアログで「許可」を押してください。</p>
+          <p class="sub">ヒント：訳音声がマイクに入ると二重に訳されることがあります。イヤホン／ヘッドセットの使用がおすすめです。マイク許可のダイアログが出ない環境（アプリ内ブラウザ等）では、Safari等の通常ブラウザでこのページを開いてください。</p>
+        </div>
+      </div>
+
+      <!-- 状態とタイマー -->
+      <div class="statusbar">
+        <span class="statepill"><span class="dot" id="stateDot"></span><span id="stateText">待機中</span></span>
+        <span class="mono" id="connDetail" style="font-size:.78rem;color:var(--ink2)"></span>
+        <span class="playbackpill" id="playbackStatus">訳音声：未開始</span>
+        <div class="timerbox">
+          <div class="timer mono" id="timer">00:00</div>
+          <div class="timerlabel">セッション時間 ／ アプリ側の自動停止（目安）15分（10分で警告）</div>
+          <div class="guardtrack"><div class="guardfill" id="guardFill"></div></div>
+        </div>
+      </div>
+
+      <div class="warnbanner" id="warnBanner" role="alert"></div>
+      <div class="errbanner" id="errBanner" role="alert"></div>
+      <div class="playbanner" id="playBanner" role="alert">
+        <b>訳音声が自動再生できませんでした</b>
+        <span style="font-size:.9rem">ブラウザに再生を止められています。下のボタンをタップしてください。</span>
+        <button id="playAudioBtn" type="button">訳音声を再生</button>
+      </div>
+
+      <!-- 言語ペア -->
+      <section class="panel" aria-label="言語ペア">
+        <h2>言語ペア<span class="h2note">原文の言語はモデルが自動で聞き分けます。訳先の言語がセッションに設定されます</span></h2>
+        <div class="langrow">
+          <div class="langfield">
+            <label for="srcLang">話す言語（原文）</label>
+            <select id="srcLang"></select>
+          </div>
+          <button class="swapbtn" id="swapBtn" type="button" aria-label="言語を入れ替える" title="入れ替え">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 8h13M13.5 4.5 17 8l-3.5 3.5M20 16H7M10.5 12.5 7 16l3.5 3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          </button>
+          <div class="langfield">
+            <label for="tgtLang">訳す言語（訳文・訳音声）</label>
+            <select id="tgtLang"></select>
+          </div>
+        </div>
+        <div class="presets" id="presets">
+          <button class="chip" type="button" data-src="ja" data-tgt="zh-CN">日本語 → 中国語</button>
+          <button class="chip" type="button" data-src="zh-CN" data-tgt="ja">中国語 → 日本語</button>
+          <button class="chip" type="button" data-src="ja" data-tgt="en">日本語 → 英語</button>
+          <button class="chip" type="button" data-src="en" data-tgt="ja">英語 → 日本語</button>
+          <button class="chip" type="button" data-src="ja" data-tgt="ko">日本語 → 韓国語</button>
+        </div>
+        <div class="langwarn" id="langWarn"></div>
+        <p class="langnote">通訳中は言語を変更できません。変えたいときは一度停止してから選び直してください。</p>
+      </section>
+
+      <!-- 開始／停止 -->
+      <section class="panel" aria-label="通訳コントロール">
+        <div class="transport">
+          <button class="bigbtn start" id="startBtn" type="button">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" aria-hidden="true"><rect x="9" y="2.5" width="6" height="11" rx="3" fill="currentColor"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+            通訳開始
+          </button>
+          <button class="bigbtn stop" id="stopBtn" type="button" style="display:none">
+            <svg width="16" height="16" viewBox="0 0 24 24" aria-hidden="true"><rect x="5" y="5" width="14" height="14" rx="2.5" fill="currentColor"/></svg>
+            停止する
+          </button>
+          <div class="sidecontrols">
+            <span class="ctl">
+              <button class="smallbtn" id="micMuteBtn" type="button" disabled>マイクをミュート</button>
+            </span>
+            <span class="ctl">
+              <label for="volRange">訳音声の音量</label>
+              <input type="range" id="volRange" min="0" max="100" value="100" />
+              <button class="smallbtn" id="volMuteBtn" type="button">消音</button>
+            </span>
+            <span class="meterwrap">
+              <div class="meterlabel">マイク入力レベル</div>
+              <div class="meter"><div class="meterfill" id="meterFill"></div></div>
+            </span>
+          </div>
+        </div>
+        <p class="langnote" style="margin-top:12px">※ マイクのミュートは<b>課金停止ではありません</b>。ミュート中もセッションは継続し、利用時間として数えられます。終わるときは必ず「停止する」を押してください。また、15分の停止は<b>アプリ側の自動停止（目安）</b>です。サーバー側セッションの上限とは別で、実際の課金はAPI側の利用時間に基づきます。</p>
+      </section>
+
+      <!-- ライブ表示 -->
+      <div class="livegrid">
+        <section class="livebox" aria-label="原文ライブ">
+          <div class="livehead">
+            <span class="livetag">原文</span>
+            <span class="livelang" id="srcLiveLang">日本語</span>
+            <span class="livestate" id="srcLiveState"></span>
+          </div>
+          <div class="livetext" id="srcLiveText"><span class="placeholder">通訳を開始すると、話した内容の文字起こしがここに流れてきます。</span></div>
+        </section>
+        <section class="livebox target" aria-label="訳文ライブ">
+          <div class="livehead">
+            <span class="livetag">訳文</span>
+            <span class="livelang" id="tgtLiveLang">中国語（簡体字）</span>
+            <span class="livestate" id="tgtLiveState"></span>
+          </div>
+          <div class="livetext" id="tgtLiveText"><span class="placeholder">訳文がここに流れ、同時に訳音声がスピーカーから再生されます。</span></div>
+        </section>
+      </div>
+
+      <!-- 履歴 -->
+      <section class="panel" aria-label="通訳履歴">
+        <div class="histhead">
+          <h2>履歴（原文・訳文は独立した時系列の記録）<span class="h2note" id="histCount"></span></h2>
+          <div class="histtools">
+            <button class="smallbtn" id="copyHistBtn" type="button">履歴をコピー</button>
+            <button class="smallbtn" id="clearHistBtn" type="button">履歴を消去</button>
+          </div>
+        </div>
+        <p style="font-size:.84rem;color:var(--ink2);margin:8px 0 0">原文と訳文はそれぞれ届いた順に個別に記録します。並びが近いものが対応するとは限らず、ペアであることを保証する表示ではありません。片方だけが記録される場合もあります。</p>
+        <div class="histlist" id="histList"><div class="histempty">まだ履歴はありません。話し終わったまとまりごとに、原文・訳文がそれぞれ独立した記録としてここに残ります。</div></div>
+      </section>
+
+      <!-- APIキーとセットアップ -->
+      <section class="panel" aria-label="APIキー設定">
+        <h2>APIキーのセットアップ（BYOK）</h2>
+        <ol class="steps">
+          <li><b>組織をリンクする</b>：ChatGPTの請求ページで、API組織「Personal」をサブスクリプション特典にリンクしておく（APIクレジットがそこに入ります）。</li>
+          <li><b>専用プロジェクトでキーを作る</b>：<a href="https://platform.openai.com/api-keys" target="_blank" rel="noopener">platform.openai.com/api-keys</a> を開き、先にプロジェクト <code>muse-realtime-translator-ai</code> を選んでから、その中で新しいシークレットキーを作成する（名前も <code>muse-realtime-translator-ai</code> が目安）。キーの全文が見られるのは作成直後だけです。</li>
+          <li><b>下の欄に貼って保存する</b>：キーはこの端末のブラウザ（localStorage）にだけ保存されます。逐次方式の「リアルタイム翻訳AI」と同じ保存場所を使うので、同じ端末・同じブラウザなら、あちらで保存したキーがそのまま使えます。</li>
+        </ol>
+        <div class="keyrow">
+          <input type="password" id="apiKeyInput" placeholder="sk-…（OpenAI APIキー）" autocomplete="off" spellcheck="false" />
+          <button class="smallbtn" id="toggleKeyBtn" type="button">表示</button>
+          <button class="smallbtn" id="saveKeyBtn" type="button">保存する</button>
+          <button class="smallbtn" id="testKeyBtn" type="button">接続テスト</button>
+          <button class="smallbtn" id="deleteKeyBtn" type="button">キーを削除</button>
+        </div>
+        <div class="keystatus" id="keyStatus"></div>
+        <p class="keynote">接続テストは、短命のクライアントシークレットを1回発行できるかだけを確認します（通訳セッションは開始しません）。キーはページのコードには含まれていません。</p>
+      </section>
+
+      <!-- 診断ログ -->
+      <section class="panel" aria-label="診断ログ">
+        <div class="histhead">
+          <h2>診断ログ<span class="h2note">接続・セッション・音声の出来事とエラーをすべて表示します</span></h2>
+          <div class="diagtools">
+            <button class="smallbtn" id="copyLogBtn" type="button">ログをコピー</button>
+            <button class="smallbtn" id="clearLogBtn" type="button">ログを消去</button>
+          </div>
+        </div>
+        <div class="diaglog" id="diagLog" style="margin-top:10px"></div>
+      </section>
+
+      <footer>
+        方式：OpenAI Realtime API の翻訳専用セッション（モデル <span class="mono">gpt-realtime-translate</span>）へブラウザから WebRTC で直接接続し、話しながら訳音声と字幕が流れます。原文の文字起こしには <span class="mono">gpt-realtime-whisper</span> を使用。料金はセッションの音声時間に応じて API クレジットから引かれます（アプリ側の自動停止（目安）は15分で、サーバー側の上限とは別です。マイクのミュートは課金停止ではありません）。仕様確認：2026-11-07、<a href="https://developers.openai.com/api/docs/guides/realtime-translation" target="_blank" rel="noopener">OpenAI公式 Realtime translation ガイド</a>。
+      </footer>
+    </div>
+
+    <audio id="remoteAudio" autoplay playsinline></audio>
+    <div class="toast" id="toast" role="status"></div>
+
+<script>
+(function(){
+  "use strict";
+
+  /* ================================================================
+     設定はここに集約する（モデルID・接続先・上限）
+     公式ドキュメント（Realtime translation ガイド）確認：2026-11-07
+     - 翻訳専用モデル gpt-realtime-translate が存在するためそれを使う
+     - 翻訳セッションは /v1/realtime ではなく /v1/realtime/translations 配下
+     - 原文の文字起こしは audio.input.transcription に gpt-realtime-whisper
+     ================================================================ */
+  var CONFIG = {
+    MODEL: "gpt-realtime-translate",
+    TRANSCRIPTION_MODEL: "gpt-realtime-whisper",
+    CLIENT_SECRETS_URL: "https://api.openai.com/v1/realtime/translations/client_secrets",
+    CALLS_URL: "https://api.openai.com/v1/realtime/translations/calls",
+    MAX_SECONDS: 15 * 60,     /* アプリ側の自動停止（目安） */
+    WARN_SECONDS: 10 * 60,    /* 警告を出す経過時間 */
+    SEGMENT_IDLE_MS: 3000,    /* この時間デルタが来なければ1セグメントとして履歴へ */
+    CONNECT_TIMEOUT_MS: 20000, /* 接続処理全体のタイムアウト */
+    DRAIN_MAX_MS: 3500,       /* 停止時に残りの出力を受け付ける上限 */
+    DRAIN_IDLE_MS: 900,       /* 停止時、最後の出力からこの時間 新規出力がなければ終了 */
+    RECOVERY_WAIT_MS: 15000,  /* disconnected を「接続回復待ち」とする期限 */
+    SECRET_EXPIRY_MARGIN_MS: 20000 /* SDP送信前にこの余裕がなければシークレット再発行 */
+  };
+  var LS_KEY = "rtai.openaiApiKey"; /* 逐次方式アプリと共通 */
+
+  /* rt = Realtime Translation の訳先コード。null は訳先として未対応（公式：訳先は13言語） */
+  var LANGS = [
+    { code:"ja",    name:"日本語",           rt:"ja" },
+    { code:"zh-CN", name:"中国語（簡体字）", rt:"zh" },
+    { code:"zh-TW", name:"中国語（繁体字）", rt:"zh" },
+    { code:"en",    name:"英語",             rt:"en" },
+    { code:"ko",    name:"韓国語",           rt:"ko" },
+    { code:"th",    name:"タイ語",           rt:null },
+    { code:"vi",    name:"ベトナム語",       rt:"vi" },
+    { code:"es",    name:"スペイン語",       rt:"es" },
+    { code:"fr",    name:"フランス語",       rt:"fr" },
+    { code:"de",    name:"ドイツ語",         rt:"de" },
+    { code:"pt",    name:"ポルトガル語",     rt:"pt" },
+    { code:"id",    name:"インドネシア語",   rt:"id" }
+  ];
+  function langByCode(c){ for (var i=0;i<LANGS.length;i++) if (LANGS[i].code===c) return LANGS[i]; return LANGS[0]; }
+  function $(id){ return document.getElementById(id); }
+  function esc(s){ var d=document.createElement("div"); d.textContent=s==null?"":String(s); return d.innerHTML; }
+  function pad2(n){ return (n<10?"0":"")+n; }
+  function clockNow(){ var d=new Date(); return pad2(d.getHours())+":"+pad2(d.getMinutes())+":"+pad2(d.getSeconds()); }
+  function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); return pad2(Math.floor(sec/60))+":"+pad2(sec%60); }
+
+  /* ---------- 診断ログ ---------- */
+  var diagEl=$("diagLog"), logLines=[];
+  function log(level, msg){
+    var line={ t:clockNow(), level:level, msg:String(msg) };
+    logLines.push(line); if (logLines.length>600) logLines.splice(0, logLines.length-600);
+    var div=document.createElement("div");
+    div.innerHTML='<span class="t">'+esc(line.t)+'</span> <span class="lv-'+esc(level)+'">'+esc(line.msg)+"</span>";
+    diagEl.appendChild(div);
+    while (diagEl.children.length>600) diagEl.removeChild(diagEl.firstChild);
+    diagEl.scrollTop=diagEl.scrollHeight;
+    if (window.console && console.log) console.log("[live-translate]["+level+"] "+line.msg);
+  }
+  function logInfo(m){ log("info", m); }
+  function logOk(m){ log("ok", m); }
+  function logWarn(m){ log("warn", "⚠ "+m); }
+  function logError(m){ log("error", "✖ "+m); }
+  function logEvent(m){ log("event", m); }
+
+  /* ---------- トースト／バナー ---------- */
+  var toastTimer=null;
+  function toast(msg){
+    var el=$("toast"); el.textContent=msg; el.classList.add("show");
+    if (toastTimer) clearTimeout(toastTimer);
+    toastTimer=setTimeout(function(){ el.classList.remove("show"); }, 3200);
+  }
+  function showError(msg){
+    var b=$("errBanner"); b.innerHTML="<b>エラー：</b>"+esc(msg); b.classList.add("show");
+  }
+  function clearError(){ var b=$("errBanner"); b.classList.remove("show"); b.textContent=""; }
+
+  /* ---------- 状態 ---------- */
+  var state="idle"; /* idle | connecting | live | stopping | recovering | error */
+  var pc=null, dc=null, localStream=null, sessionSeq=0;
+  /* (1) リソースはセッション単位で保持する。activeSession が現在の所有者。
+     遅延クリーンアップは seq を照合し、別セッションの資源には触れない。 */
+  var activeSession=null; /* {seq, pc, dc, stream, secret:{value,expires_at}, abort:AbortController, micTrack} */
+  var startedAt=0, timerInt=null, warned=false;
+  var audioCtx=null, analyser=null, meterRAF=null, meterSrcNode=null;
+  var segmentTimer=null, segSrc="", segTgt="", segStartAt=0;
+  var history=[];
+  var lastEventLogAt={};
+  var connectTimer=null, recoveryTimer=null, drainTimer=null;
+  var lastOutputAt=0, recovering=false;
+  var playbackBlocked=false;
+  function sessionIsCurrent(seq){ return !!(activeSession && activeSession.seq===seq); }
+
+  var stateDot=$("stateDot"), stateText=$("stateText"), connDetail=$("connDetail");
+  var startBtn=$("startBtn"), stopBtn=$("stopBtn");
+  var srcSel=$("srcLang"), tgtSel=$("tgtLang"), swapBtn=$("swapBtn");
+  var remoteAudio=$("remoteAudio");
+
+  function setPlaybackStatus(txt, cls){
+    var el=$("playbackStatus"); if(!el) return;
+    el.textContent="訳音声："+txt;
+    el.className="playbackpill"+(cls?" "+cls:"");
+  }
+  function setState(s, label){
+    state=s;
+    stateText.textContent=label;
+    stateDot.className="dot"+(s==="live"?" live":(s==="connecting"||s==="recovering")?" connecting":s==="error"?" error":"");
+    var busy=(s==="connecting"||s==="live"||s==="stopping"||s==="recovering");
+    startBtn.style.display=busy?"none":"inline-flex";
+    stopBtn.style.display=busy?"inline-flex":"none";
+    stopBtn.disabled=!(s==="live"||s==="connecting"||s==="recovering");
+    srcSel.disabled=busy; tgtSel.disabled=busy; swapBtn.disabled=busy;
+    var chips=document.querySelectorAll("#presets .chip");
+    for (var i=0;i<chips.length;i++) chips[i].disabled=busy;
+    $("micMuteBtn").disabled=!(s==="live"||s==="recovering");
+    if (s==="idle"){ connDetail.textContent=""; setPlaybackStatus(playbackBlocked?"再生待ち（要タップ）":"未開始", playbackBlocked?"blocked":""); }
+  }
+
+  /* ---------- 言語UI ---------- */
+  LANGS.forEach(function(l){
+    var o1=document.createElement("option"); o1.value=l.code; o1.textContent=l.name; srcSel.appendChild(o1);
+    var o2=document.createElement("option"); o2.value=l.code; o2.textContent=l.name; tgtSel.appendChild(o2);
+  });
+  srcSel.value="ja"; tgtSel.value="zh-CN";
+
+  function refreshLangUI(){
+    var s=langByCode(srcSel.value), t=langByCode(tgtSel.value);
+    $("srcLiveLang").textContent=s.name;
+    $("tgtLiveLang").textContent=t.name;
+    var chips=document.querySelectorAll("#presets .chip");
+    for (var i=0;i<chips.length;i++){
+      var c=chips[i];
+      c.classList.toggle("active", c.getAttribute("data-src")===srcSel.value && c.getAttribute("data-tgt")===tgtSel.value);
+    }
+    var w=$("langWarn"), msgs=[];
+    if (!t.rt) msgs.push("訳先の「"+t.name+"」は、翻訳専用モデル（gpt-realtime-translate）の訳先対応13言語に含まれていないため、この組み合わせでは通訳を開始できません（原文として聞き取ることはできます）。訳先を対応言語に変えてください。");
+    if (s.rt && t.rt && s.rt===t.rt) msgs.push("原文と訳先が同じ言語です。モデルは訳先と同じ言語の発話を訳さないことがあり、無音になる場合があります。");
+    if (t.code==="zh-TW") msgs.push("訳先の中国語は簡体字／繁体字の区別なく「中国語」としてモデルに渡されます。出力の字体はモデル側の判断になります。");
+    if (msgs.length){ w.innerHTML=msgs.map(function(m){return "⚠ "+esc(m);}).join("<br>"); w.classList.add("show"); }
+    else { w.classList.remove("show"); w.textContent=""; }
+    return { src:s, tgt:t };
+  }
+  srcSel.addEventListener("change", function(){ var p=refreshLangUI(); logInfo("言語ペア："+p.src.name+" → "+p.tgt.name); });
+  tgtSel.addEventListener("change", function(){ var p=refreshLangUI(); logInfo("言語ペア："+p.src.name+" → "+p.tgt.name); });
+  swapBtn.addEventListener("click", function(){
+    var a=srcSel.value; srcSel.value=tgtSel.value; tgtSel.value=a;
+    var p=refreshLangUI(); logInfo("言語を入れ替え："+p.src.name+" → "+p.tgt.name);
+  });
+  document.querySelectorAll("#presets .chip").forEach(function(c){
+    c.addEventListener("click", function(){
+      srcSel.value=c.getAttribute("data-src"); tgtSel.value=c.getAttribute("data-tgt");
+      var p=refreshLangUI(); logInfo("プリセット適用："+p.src.name+" → "+p.tgt.name);
+    });
+  });
+
+  /* ---------- APIキー ---------- */
+  var apiKey="";
+  try{ apiKey=window.localStorage.getItem(LS_KEY)||""; }catch(e){ logError("localStorageの読み取りに失敗："+(e&&e.message?e.message:e)); }
+  function refreshKeyStatus(){
+    var el=$("keyStatus");
+    if (apiKey){
+      el.innerHTML='<span class="ok">● APIキー設定済み</span>（この端末に保存されています。末尾：…'+esc(apiKey.slice(-4))+"）";
+      if (!$("apiKeyInput").value) $("apiKeyInput").placeholder="保存済み（変更する場合だけ貼り直してください）";
+    } else {
+      el.innerHTML='<span class="none">● APIキー未設定</span> — 上の手順でキーを作り、ここに貼って「保存する」を押してください。';
+      $("apiKeyInput").placeholder="sk-…（OpenAI APIキー）";
+    }
+  }
+  $("toggleKeyBtn").addEventListener("click", function(){
+    var inp=$("apiKeyInput");
+    var show=inp.type==="password";
+    inp.type=show?"text":"password";
+    this.textContent=show?"隠す":"表示";
+  });
+  $("saveKeyBtn").addEventListener("click", function(){
+    var v=$("apiKeyInput").value.trim();
+    if (!v){ toast("キーが入力されていません"); logWarn("キー保存：入力が空のため何もしませんでした"); return; }
+    if (v.indexOf("sk-")!==0) logWarn("入力されたキーが sk- で始まっていません。このまま保存しますが、形式を確認してください。");
+    try{
+      window.localStorage.setItem(LS_KEY, v);
+      apiKey=v; $("apiKeyInput").value="";
+      refreshKeyStatus(); toast("APIキーを保存しました"); logOk("APIキーを localStorage（"+LS_KEY+"）に保存しました");
+    }catch(e){ logError("キーの保存に失敗："+(e&&e.message?e.message:e)); toast("保存に失敗しました"); }
+  });
+  $("deleteKeyBtn").addEventListener("click", function(){
+    /* (8) localStorage削除が成功した場合だけ成功表示を出す */
+    var removed=false, removeErr=null;
+    try{ window.localStorage.removeItem(LS_KEY); removed=true; }catch(e){ removeErr=e; }
+    if (removed){
+      /* 削除できたことを読み戻して確認する */
+      try{ if (window.localStorage.getItem(LS_KEY)) removed=false; }catch(e2){ /* 読み戻し不能でも removeItem は例外なしだったため成功扱いを維持 */ }
+    }
+    if (removed){
+      apiKey=""; $("apiKeyInput").value=""; refreshKeyStatus();
+      toast("APIキーを削除しました"); logOk("APIキーを削除しました（この端末の保存分のみ）");
+    } else {
+      logError("キーの削除に失敗しました："+(removeErr&&removeErr.message?removeErr.message:"保存領域からキーが残っています"));
+      toast("キーの削除に失敗しました");
+      showError("APIキーの削除に失敗しました。ブラウザの保存領域を確認してください。（キーはまだ残っている可能性があります）");
+      refreshKeyStatus();
+    }
+  });
+
+  /* (9) 認証系APIの異常応答では応答本文をログ／エラー文に出さない。
+     HTTPステータスと、JSON解析に失敗した事実だけを記録する。 */
+  function parseApiError(status, text){
+    var msg="HTTP "+status;
+    if (text){
+      try{ JSON.parse(text); msg+="（応答本文は記録しません）"; }
+      catch(e){ msg+="（応答のJSON解析に失敗しました。本文は記録しません）"; }
+    }
+    return msg;
+  }
+  function keyForUse(){
+    var typed=$("apiKeyInput").value.trim();
+    return typed || apiKey || "";
+  }
+
+  /* (7) 短命クライアントシークレットの発行（接続テストと本接続で共用）
+     戻り値は {value, expires_at}（expires_at は unix 秒、なければ null） */
+  function mintClientSecret(key, targetRtLang, signal){
+    var body={ session:{
+      model: CONFIG.MODEL,
+      audio:{
+        input:{ transcription:{ model: CONFIG.TRANSCRIPTION_MODEL }, noise_reduction:{ type:"near_field" } },
+        output:{ language: targetRtLang }
+      }
+    }};
+    logInfo("クライアントシークレットを発行中… POST "+CONFIG.CLIENT_SECRETS_URL+"（model="+CONFIG.MODEL+", output.language="+targetRtLang+"）");
+    var opts={
+      method:"POST",
+      headers:{ "Authorization":"Bearer "+key, "Content-Type":"application/json" },
+      body: JSON.stringify(body)
+    };
+    if (signal) opts.signal=signal;
+    return fetch(CONFIG.CLIENT_SECRETS_URL, opts).then(function(res){
+      return res.text().then(function(text){
+        if (!res.ok) throw new Error("クライアントシークレット発行失敗 "+parseApiError(res.status, text));
+        var j; try{ j=JSON.parse(text); }catch(e){ throw new Error("クライアントシークレットの応答JSONを解析できませんでした（本文は記録しません）"); }
+        var value = j.value || (j.client_secret && (j.client_secret.value || j.client_secret)) || j.client_secret_value || "";
+        if (typeof value!=="string" || !value) throw new Error("応答にクライアントシークレット(value)が含まれていません。応答キー："+Object.keys(j).join(", "));
+        var exp = j.expires_at || (j.client_secret && j.client_secret.expires_at) || null;
+        if (typeof exp!=="number") exp=null;
+        logOk("クライアントシークレット発行成功"+(exp?"（有効期限 unix="+exp+"）":"（有効期限は応答に含まれていません）"));
+        return { value:value, expires_at:exp };
+      });
+    });
+  }
+  /* SDP送信直前に期限を確認し、切れている／余裕がなければ再発行する */
+  function ensureFreshSecret(sess, key, rtLang){
+    var s=sess && sess.secret;
+    var fresh = !!(s && s.value && (!s.expires_at || (s.expires_at*1000 - Date.now() > CONFIG.SECRET_EXPIRY_MARGIN_MS)));
+    if (fresh) return Promise.resolve(s);
+    logWarn("クライアントシークレットの期限が近い／切れているため、SDP送信前に再発行します");
+    return mintClientSecret(key, rtLang, sess ? sess.abortSignal : null).then(function(ns){
+      if (sess) sess.secret=ns;
+      return ns;
+    });
+  }
+
+  $("testKeyBtn").addEventListener("click", function(){
+    var key=keyForUse();
+    if (!key){ toast("まずキーを入力してください"); logWarn("接続テスト：キーが未入力・未保存です"); return; }
+    var pair=refreshLangUI();
+    var rtLang=pair.tgt.rt || "zh";
+    if (!pair.tgt.rt) logWarn("現在の訳先（"+pair.tgt.name+"）は未対応のため、接続テストでは仮に中国語（zh）でシークレット発行だけを試します");
+    var btn=this; btn.disabled=true; btn.textContent="テスト中…";
+    mintClientSecret(key, rtLang).then(function(){
+      toast("接続テスト成功：キーでシークレットを発行できました");
+    }).catch(function(e){
+      logError("接続テスト失敗："+(e&&e.message?e.message:e));
+      showError("接続テストに失敗しました。診断ログを確認してください。\n"+(e&&e.message?e.message:e));
+      toast("接続テスト失敗");
+    }).then(function(){ btn.disabled=false; btn.textContent="接続テスト"; });
+  });
+
+  /* ---------- ライブ文字起こし ---------- */
+  function renderLive(){
+    var sEl=$("srcLiveText"), tEl=$("tgtLiveText");
+    if (segSrc){ sEl.innerHTML=esc(segSrc)+(state==="live"?'<span class="caret"></span>':""); }
+    else if (state==="live"){ sEl.innerHTML='<span class="placeholder">聞き取り中…話してください。</span>'; }
+    if (segTgt){ tEl.innerHTML=esc(segTgt)+(state==="live"?'<span class="caret"></span>':""); }
+    else if (state==="live"){ tEl.innerHTML='<span class="placeholder">訳音声と訳文がここに流れます…</span>'; }
+    $("srcLiveState").textContent=segSrc?"文字起こし中":"";
+    $("tgtLiveState").textContent=segTgt?"翻訳中":"";
+  }
+  function scheduleSegmentFlush(){
+    if (segmentTimer) clearTimeout(segmentTimer);
+    segmentTimer=setTimeout(function(){ flushSegment("（間隔が空いたため確定）"); }, CONFIG.SEGMENT_IDLE_MS);
+  }
+  function flushSegment(reason){
+    if (segmentTimer){ clearTimeout(segmentTimer); segmentTimer=null; }
+    var s=segSrc.trim(), t=segTgt.trim();
+    segSrc=""; segTgt="";
+    if (!s && !t){ renderLive(); return; }
+    /* (5) 原文と訳文をペアとして保存しない。それぞれ独立した時系列レコードにする */
+    var at=clockNow(), el=startedAt?fmtElapsed((Date.now()-startedAt)/1000):"00:00";
+    if (s) history.push({ at:at, elapsed:el, kind:"src", text:s });
+    if (t) history.push({ at:at, elapsed:el, kind:"tgt", text:t });
+    renderHistory();
+    logInfo("記録確定 "+reason+"：原文 "+(s?s.length+"字":"なし")+"／訳文 "+(t?t.length+"字":"なし")+"（独立した記録として保存）");
+    renderLive();
+  }
+  function renderHistory(){
+    var list=$("histList");
+    $("histCount").textContent=history.length?("全"+history.length+"件"):"";
+    if (!history.length){ list.innerHTML='<div class="histempty">まだ履歴はありません。話し終わったまとまりごとに、原文・訳文がそれぞれ独立した記録としてここに残ります。</div>'; return; }
+    list.innerHTML=history.map(function(h){
+      var isTgt=h.kind==="tgt";
+      return '<div class="histitem"><div class="histmeta"><span class="histkind'+(isTgt?" tgt":"")+'">'+(isTgt?"訳文":"原文")+"</span>"+esc(h.at)+" ・ セッション "+esc(h.elapsed)+'</div>'
+        +'<div class="'+(isTgt?"histtgt":"histsrc")+'">'+esc(h.text)+"</div></div>";
+    }).join("");
+    list.scrollTop=list.scrollHeight;
+  }
+  $("clearHistBtn").addEventListener("click", function(){ history=[]; renderHistory(); logInfo("通訳履歴を消去しました"); });
+  function copyText(text, doneMsg){
+    function fallback(){
+      var ta=document.createElement("textarea"); ta.value=text; ta.style.position="fixed"; ta.style.opacity="0";
+      document.body.appendChild(ta); ta.select();
+      try{ document.execCommand("copy"); toast(doneMsg); }catch(e){ logError("コピーに失敗："+(e&&e.message?e.message:e)); toast("コピーできませんでした"); }
+      document.body.removeChild(ta);
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText){
+      navigator.clipboard.writeText(text).then(function(){ toast(doneMsg); }, function(){ fallback(); });
+    } else fallback();
+  }
+  $("copyHistBtn").addEventListener("click", function(){
+    if (!history.length){ toast("履歴がありません"); return; }
+    var txt=history.map(function(h){ return "["+h.at+"] "+(h.kind==="tgt"?"訳文":"原文")+"："+h.text; }).join("\n");
+    copyText(txt, "履歴をコピーしました");
+  });
+  $("copyLogBtn").addEventListener("click", function(){
+    var txt=logLines.map(function(l){ return l.t+" ["+l.level+"] "+l.msg; }).join("\n");
+    copyText(txt||"（ログなし）", "診断ログをコピーしました");
+  });
+  $("clearLogBtn").addEventListener("click", function(){ logLines=[]; diagEl.innerHTML=""; logInfo("診断ログを消去しました"); });
+
+  /* ---------- 音量・マイクミュート ---------- */
+  var volMuted=false, lastVol=100;
+  $("volRange").addEventListener("input", function(){
+    var v=Number(this.value); remoteAudio.volume=v/100; remoteAudio.muted=false; volMuted=false;
+    $("volMuteBtn").textContent="消音"; $("volMuteBtn").classList.remove("on");
+    if (v>0) lastVol=v;
+  });
+  $("volMuteBtn").addEventListener("click", function(){
+    volMuted=!volMuted; remoteAudio.muted=volMuted;
+    this.textContent=volMuted?"消音を解除":"消音"; this.classList.toggle("on", volMuted);
+    logInfo("訳音声を"+(volMuted?"ミュートしました":"ミュート解除しました"));
+  });
+  $("micMuteBtn").addEventListener("click", function(){
+    if (!localStream) return;
+    var tracks=localStream.getAudioTracks(); if (!tracks.length) return;
+    var nowMuted=tracks[0].enabled;
+    tracks.forEach(function(t){ t.enabled=!nowMuted; });
+    this.textContent=nowMuted?"マイクのミュートを解除":"マイクをミュート";
+    this.classList.toggle("on", nowMuted);
+    logInfo("マイクを"+(nowMuted?"ミュートしました（モデルには無音が流れます）":"ミュート解除しました"));
+  });
+
+  /* ---------- マイクレベルメーター ---------- */
+  function startMeter(stream){
+    try{
+      if (!audioCtx) audioCtx=new (window.AudioContext||window.webkitAudioContext)();
+      if (audioCtx.state==="suspended") audioCtx.resume();
+      var srcNode=audioCtx.createMediaStreamSource(stream);
+      meterSrcNode=srcNode;
+      analyser=audioCtx.createAnalyser(); analyser.fftSize=256;
+      srcNode.connect(analyser);
+      var buf=new Uint8Array(analyser.frequencyBinCount);
+      var fill=$("meterFill");
+      var tick=function(){
+        if (!analyser) return;
+        analyser.getByteTimeDomainData(buf);
+        var sum=0; for (var i=0;i<buf.length;i++){ var v=(buf[i]-128)/128; sum+=v*v; }
+        var rms=Math.sqrt(sum/buf.length);
+        fill.style.width=Math.min(100, Math.round(rms*260))+"%";
+        meterRAF=requestAnimationFrame(tick);
+      };
+      tick();
+    }catch(e){ logWarn("マイクレベルメーターを開始できませんでした："+(e&&e.message?e.message:e)); }
+  }
+  function stopMeter(){
+    if (meterRAF) cancelAnimationFrame(meterRAF); meterRAF=null;
+    /* (10) Web Audioノードを disconnect する */
+    try{ if (meterSrcNode) meterSrcNode.disconnect(); }catch(e){}
+    try{ if (analyser) analyser.disconnect(); }catch(e){}
+    meterSrcNode=null; analyser=null; $("meterFill").style.width="0%";
+  }
+  function closeAudioContext(){
+    if (!audioCtx) return;
+    var ctx=audioCtx; audioCtx=null;
+    try{
+      var p=(ctx.state==="running" && ctx.suspend) ? ctx.suspend() : null;
+      if (p && p.then) p.then(function(){ try{ ctx.close(); }catch(e){} }, function(){ try{ ctx.close(); }catch(e){} });
+      else if (ctx.close) ctx.close();
+    }catch(e){ try{ ctx.close(); }catch(e2){} }
+  }
+
+  /* ---------- タイマーとコストガード ---------- */
+  function startTimer(){
+    startedAt=Date.now(); warned=false;
+    $("warnBanner").classList.remove("show");
+    var fill=$("guardFill"); fill.style.width="0%"; fill.className="guardfill";
+    $("timer").textContent="00:00"; $("timer").classList.remove("warn");
+    timerInt=setInterval(function(){
+      var el=(Date.now()-startedAt)/1000;
+      $("timer").textContent=fmtElapsed(el);
+      var pct=Math.min(100, el/CONFIG.MAX_SECONDS*100);
+      fill.style.width=pct+"%";
+      if (el>=CONFIG.WARN_SECONDS && !warned){
+        warned=true;
+        fill.className="guardfill warn"; $("timer").classList.add("warn");
+        var b=$("warnBanner");
+        b.innerHTML="<b>⚠ セッションが10分を超えました。</b>コスト配慮のため、<b>アプリ側の自動停止（目安）15分</b>で停止します。続ける場合は、停止後にもう一度「通訳開始」を押してください。マイクのミュートは課金停止ではありません。";
+        b.classList.add("show");
+        logWarn("セッション10分経過：アプリ側の自動停止（目安）15分で停止します");
+        toast("10分経過：15分（目安）で自動停止します");
+      }
+      if (el>=CONFIG.WARN_SECONDS) fill.className="guardfill "+(el>=CONFIG.MAX_SECONDS-60?"danger":"warn");
+      if (el>=CONFIG.MAX_SECONDS){
+        logWarn("アプリ側の自動停止（目安）15分に到達したため自動停止します");
+        toast("15分（目安）に到達したため自動停止しました");
+        stopSession("アプリ側の自動停止（目安）15分到達");
+      }
+    }, 250);
+  }
+  function stopTimer(){ if (timerInt){ clearInterval(timerInt); timerInt=null; } }
+
+  /* ---------- Realtimeイベント処理 ---------- */
+  function shouldLogEvent(type){
+    var now=Date.now();
+    if (type.indexOf(".delta")>-1){
+      if (lastEventLogAt[type] && now-lastEventLogAt[type]<5000) return false;
+      lastEventLogAt[type]=now; return true;
+    }
+    return true;
+  }
+  function handleEvent(raw){
+    var ev;
+    try{ ev=JSON.parse(raw); }catch(e){ logError("データチャネルのメッセージをJSONとして読めません："+String(raw).slice(0,160)); return; }
+    var type=ev.type||"(typeなし)";
+    if (type.indexOf(".delta")>-1 && state==="stopping") lastOutputAt=Date.now();
+    if (type==="session.input_transcript.delta"){
+      if (typeof ev.delta==="string" && ev.delta){ segSrc+=ev.delta; if (!segStartAt) segStartAt=Date.now(); renderLive(); if (state!=="stopping") scheduleSegmentFlush(); else lastOutputAt=Date.now(); }
+      if (shouldLogEvent(type)) logEvent("event: session.input_transcript.delta（原文デルタ受信中）");
+      return;
+    }
+    if (type==="session.output_transcript.delta"){
+      if (typeof ev.delta==="string" && ev.delta){ segTgt+=ev.delta; if (!segStartAt) segStartAt=Date.now(); renderLive(); if (state!=="stopping") scheduleSegmentFlush(); else lastOutputAt=Date.now(); }
+      if (shouldLogEvent(type)) logEvent("event: session.output_transcript.delta（訳文デルタ受信中）");
+      return;
+    }
+    if (type==="session.input_transcript.done" || type==="session.input_transcript.completed"){
+      var t1=(ev.transcript||ev.text||"");
+      if (t1 && segSrc.indexOf(t1)===-1 && t1.length>segSrc.length) segSrc=t1;
+      logEvent("event: "+type+(t1?"："+t1.slice(0,120):""));
+      renderLive(); if (state!=="stopping") scheduleSegmentFlush(); else lastOutputAt=Date.now();
+      return;
+    }
+    if (type==="session.output_transcript.done" || type==="session.output_transcript.completed"){
+      var t2=(ev.transcript||ev.text||"");
+      if (t2 && segTgt.indexOf(t2)===-1 && t2.length>segTgt.length) segTgt=t2;
+      logEvent("event: "+type+(t2?"："+t2.slice(0,120):""));
+      renderLive(); if (state!=="stopping") scheduleSegmentFlush(); else lastOutputAt=Date.now();
+      return;
+    }
+    if (type==="session.output_audio.delta"){
+      if (state==="stopping") lastOutputAt=Date.now();
+      if (shouldLogEvent(type)) logEvent("event: session.output_audio.delta（訳音声はWebRTCトラック側で再生中）");
+      return;
+    }
+    if (type==="error"){
+      var em=(ev.error&&(ev.error.message||ev.error.code))||ev.message||JSON.stringify(ev).slice(0,300);
+      logError("Realtimeエラーイベント："+em);
+      showError("セッション中にエラーが発生しました。\n"+em+"\n（詳細は診断ログを確認してください）");
+      return;
+    }
+    if (type==="session.created"){ logOk("event: session.created — 翻訳セッションが作成されました"); return; }
+    if (type==="session.updated"){ logInfo("event: session.updated — セッション設定が反映されました"); return; }
+    if (type==="session.closed"){
+      logInfo("event: session.closed — サーバー側でセッションが閉じられました");
+      /* (2) 終了系イベントを状態に接続する：最終flush → クリーンアップ → 待機 */
+      if (state==="live" || state==="recovering" || state==="connecting"){
+        finishFromServer("サーバー側でセッションが終了しました（session.closed）");
+      }
+      return;
+    }
+    if (shouldLogEvent(type)) logEvent("event: "+type);
+  }
+
+  /* ---------- セッション開始／停止 ---------- */
+  function clearConnectTimer(){ if (connectTimer){ clearTimeout(connectTimer); connectTimer=null; } }
+  function clearRecoveryTimer(){ if (recoveryTimer){ clearTimeout(recoveryTimer); recoveryTimer=null; } recovering=false; }
+
+  /* (2) disconnected は即終了せず「接続回復待ち」として期限つきで扱う */
+  function enterRecovery(seq, why){
+    if (!sessionIsCurrent(seq)) return;
+    if (state!=="live" && state!=="recovering") return;
+    if (recovering) return;
+    recovering=true;
+    setState("recovering", "接続回復待ち…");
+    connDetail.textContent="接続が一時的に切れました。回復を待っています（期限 "+Math.round(CONFIG.RECOVERY_WAIT_MS/1000)+"秒）";
+    logWarn("接続回復待ちに入ります（"+why+"）。"+Math.round(CONFIG.RECOVERY_WAIT_MS/1000)+"秒以内に回復しなければ終了します");
+    clearTimeout(recoveryTimer);
+    recoveryTimer=setTimeout(function(){
+      if (!sessionIsCurrent(seq)) return;
+      if (state==="recovering"){
+        logError("接続回復待ちの期限を過ぎたためセッションを終了します");
+        showError("接続が回復しませんでした。診断ログを確認のうえ、手動で再開してください。");
+        finishFromServer("接続回復待ちの期限切れ");
+      }
+    }, CONFIG.RECOVERY_WAIT_MS);
+  }
+  function exitRecovery(seq){
+    if (!recovering) return;
+    clearRecoveryTimer();
+    if (sessionIsCurrent(seq) && state==="recovering"){
+      setState("live", "● 通訳中（LIVE）");
+      logOk("接続が回復しました");
+    }
+  }
+
+  /* (4) LIVE判定：SDP成功だけではLIVEにせず、PC connected かつ DC open を確認する */
+  function maybeGoLive(seq, pair){
+    if (!sessionIsCurrent(seq)) return;
+    if (state!=="connecting") return;
+    var sess=activeSession;
+    var pcOk = sess.pc && sess.pc.connectionState==="connected";
+    var dcOk = sess.dc && sess.dc.readyState==="open";
+    if (!pcOk || !dcOk){
+      connDetail.textContent="接続確認中…（ピア接続："+(sess.pc?sess.pc.connectionState:"-")+"／データチャネル："+(sess.dc?sess.dc.readyState:"-")+"）";
+      return;
+    }
+    clearConnectTimer();
+    setState("live", "● 通訳中（LIVE）");
+    connDetail.textContent=CONFIG.MODEL+" ／ "+pair.src.name+" → "+pair.tgt.name;
+    startTimer();
+    renderLive();
+    logOk("接続完了を確認（PeerConnection=connected、DataChannel=open）。通訳セッション開始。話し続けてください");
+    toast("通訳中です。話してください");
+  }
+
+  /* (6) 自動再生の復旧 */
+  function attemptRemotePlay(seq){
+    var p;
+    try{ p=remoteAudio.play(); }catch(e){ p=null; onPlayBlocked(e); }
+    if (p && p.catch) p.catch(function(err){ onPlayBlocked(err); });
+    else if (p && p.then) p.then(function(){ onPlayOk(); }, function(e){ onPlayBlocked(e); });
+  }
+  function onPlayOk(){
+    playbackBlocked=false;
+    $("playBanner").classList.remove("show");
+    setPlaybackStatus("再生中", "ok");
+    logOk("訳音声の再生を開始しました");
+  }
+  function onPlayBlocked(err){
+    playbackBlocked=true;
+    $("playBanner").classList.add("show");
+    setPlaybackStatus("再生待ち（要タップ）", "blocked");
+    logWarn("訳音声の自動再生がブロックされました："+(err&&err.message?err.message:err)+"。「訳音声を再生」ボタンをタップしてください");
+  }
+  remoteAudio.addEventListener("playing", function(){ if (remoteAudio.srcObject) onPlayOk(); });
+  remoteAudio.addEventListener("pause", function(){ if (state==="live"||state==="recovering") setPlaybackStatus("一時停止中", ""); });
+
+  function cleanupSessionFor(seq){
+    /* (1) 世代チェック：別セッションの資源には触れない */
+    if (seq!=null && !sessionIsCurrent(seq)){
+      logInfo("古いセッション(seq="+seq+")の後片付けをスキップしました（現在のセッションを保護）");
+      return;
+    }
+    var sess=activeSession;
+    stopTimer(); stopMeter(); closeAudioContext();
+    clearConnectTimer(); clearRecoveryTimer();
+    if (drainTimer){ clearTimeout(drainTimer); drainTimer=null; }
+    if (segmentTimer){ clearTimeout(segmentTimer); segmentTimer=null; }
+    if (sess && sess.abort){ try{ sess.abort.abort(); }catch(e){} }
+    if (sess){
+      if (sess.dc){ try{ sess.dc.onopen=null; sess.dc.onmessage=null; sess.dc.onclose=null; sess.dc.onerror=null; sess.dc.close(); }catch(e){} }
+      if (sess.pc){ try{ sess.pc.oniceconnectionstatechange=null; sess.pc.onconnectionstatechange=null; sess.pc.ontrack=null; sess.pc.close(); }catch(e){} }
+      if (sess.stream){ sess.stream.getTracks().forEach(function(tr){ try{ tr.onended=null; tr.stop(); }catch(e){} }); }
+    }
+    /* globals are mirrors of activeSession only */
+    if (!sess || (pc===sess.pc)) pc=null;
+    if (!sess || (dc===sess.dc)) dc=null;
+    if (!sess || (localStream===sess.stream)) localStream=null;
+    activeSession=null;
+    try{ remoteAudio.pause(); }catch(e){}
+    try{ remoteAudio.srcObject=null; }catch(e){}
+    var mb=$("micMuteBtn"); mb.textContent="マイクをミュート"; mb.classList.remove("on");
+  }
+  function cleanupSession(){ cleanupSessionFor(activeSession?activeSession.seq:null); }
+
+  /* サーバー／回線側からの終了：最終flush → クリーンアップ → 待機（session.close送信はしない） */
+  function finishFromServer(reason){
+    if (state==="stopping") { logInfo("停止処理中のため終了イベントを無視："+reason); return; }
+    var seq=activeSession?activeSession.seq:null;
+    logInfo("セッションを終了します（理由："+reason+"）");
+    stopTimer(); clearRecoveryTimer(); clearConnectTimer();
+    setState("stopping", "停止中…");
+    flushSegment("（終了時に最終確定）");
+    cleanupSessionFor(seq);
+    if (seq==null || !activeSession) { setState("idle", "待機中"); renderLive(); }
+    logOk("セッション終了");
+  }
+
+  function failStart(mySeq, msg){
+    if (!sessionIsCurrent(mySeq)) return;
+    if (state==="stopping") { logInfo("停止処理中のため接続失敗処理をスキップしました"); return; }
+    logError(msg);
+    showError(msg);
+    cleanupSessionFor(mySeq);
+    setState("idle", "待機中（直前の接続は失敗）");
+  }
+
+  function startSession(){
+    clearError();
+    if (state==="stopping"){ logWarn("停止処理中のため開始要求を無視しました"); return; }
+    var key=keyForUse();
+    if (!key){
+      var m="APIキーが未設定です。下の「APIキーのセットアップ」でキーを貼って保存してから、もう一度「通訳開始」を押してください。";
+      logError("開始できません："+m); showError(m); toast("APIキーが未設定です"); return;
+    }
+    var pair=refreshLangUI();
+    if (!pair.tgt.rt){
+      var m2="訳先の「"+pair.tgt.name+"」は翻訳専用モデルの訳先対応言語に含まれていないため開始できません。訳先を対応言語に変えてください。";
+      logError("開始できません："+m2); showError(m2); return;
+    }
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia){
+      var m3="このブラウザ／表示環境ではマイク取得（getUserMedia）が使えません。Safari等の通常ブラウザでこのページを開き直してください。";
+      logError("開始できません："+m3); showError(m3); return;
+    }
+    if (typeof RTCPeerConnection==="undefined"){
+      var m4="このブラウザはWebRTC（RTCPeerConnection）に対応していないため接続できません。";
+      logError("開始できません："+m4); showError(m4); return;
+    }
+
+    var mySeq=++sessionSeq;
+    var controller=(typeof AbortController!=="undefined")?new AbortController():null;
+    var sess={ seq:mySeq, pc:null, dc:null, stream:null, secret:null, abort:controller, abortSignal:controller?controller.signal:null, pair:pair };
+    activeSession=sess;
+    setState("connecting", "接続中…");
+    setPlaybackStatus("接続待ち", "");
+    connDetail.textContent="マイクとセッションを準備しています";
+    logInfo("通訳開始："+pair.src.name+" → "+pair.tgt.name+"（訳先コード："+pair.tgt.rt+"／原文は自動検出）");
+    segSrc=""; segTgt=""; renderLive();
+
+    /* (4) 接続処理全体のタイムアウト */
+    clearConnectTimer();
+    connectTimer=setTimeout(function(){
+      if (!sessionIsCurrent(mySeq) || state!=="connecting") return;
+      logError("接続がタイムアウトしました（"+Math.round(CONFIG.CONNECT_TIMEOUT_MS/1000)+"秒）");
+      if (sess.abort){ try{ sess.abort.abort(); }catch(e){} }
+      failStart(mySeq, "接続がタイムアウトしました。ネットワークとマイク許可を確認して再試行してください。（自動再試行はしません）");
+    }, CONFIG.CONNECT_TIMEOUT_MS);
+
+    var streamRef=null;
+    /* (7) 発行はマイク取得の後に行う */
+    logInfo("マイクを取得します（許可ダイアログが出たら「許可」を押してください）");
+    navigator.mediaDevices.getUserMedia({ audio:{ echoCancellation:true, noiseSuppression:true, autoGainControl:true } })
+    .then(function(stream){
+      if (!sessionIsCurrent(mySeq)){ stream.getTracks().forEach(function(tr){ tr.stop(); }); throw new Error("開始処理が取り消されました"); }
+      streamRef=stream; sess.stream=stream; localStream=stream;
+      var tr=stream.getAudioTracks()[0];
+      logOk("マイク取得成功："+(tr&&tr.label?tr.label:"(ラベルなし)"));
+      /* (2) マイクトラックの ended を状態に接続する */
+      if (tr){
+        tr.onended=function(){
+          if (!sessionIsCurrent(mySeq)) return;
+          if (state==="live"||state==="recovering"||state==="connecting"){
+            logError("マイクトラックが終了しました（ended）");
+            showError("マイクが終了しました。セッションを終了します。");
+            finishFromServer("マイクトラック終了");
+          }
+        };
+      }
+      startMeter(stream);
+      /* マイク取得後にシークレットを発行する */
+      return mintClientSecret(key, pair.tgt.rt, sess.abortSignal);
+    }).then(function(secret){
+      if (!sessionIsCurrent(mySeq) || state==="stopping") throw new Error("開始処理が取り消されました");
+      sess.secret=secret;
+      var myPc=new RTCPeerConnection();
+      sess.pc=myPc; pc=myPc;
+      /* (10) ハンドラは捕捉した myPc だけを見て、null化した全域変数に触れない */
+      myPc.oniceconnectionstatechange=function(){
+        if (!sessionIsCurrent(mySeq)) return;
+        var st=myPc.iceConnectionState;
+        logInfo("ICE接続状態："+st);
+        if (st==="failed"){
+          if (state==="stopping") return;
+          logError("ICE接続が失敗しました。ネットワークを確認してください（自動再試行はしません）");
+          showError("接続が切れました（ICE failed）。診断ログを確認のうえ、手動で再開してください。");
+          finishFromServer("ICE failed");
+        } else if (st==="disconnected"){
+          if (state==="live") enterRecovery(mySeq, "ICE disconnected");
+        } else if (st==="connected" || st==="completed"){
+          exitRecovery(mySeq); maybeGoLive(mySeq, pair);
+        }
+      };
+      myPc.onconnectionstatechange=function(){
+        if (!sessionIsCurrent(mySeq)) return;
+        var cs=myPc.connectionState;
+        logInfo("ピア接続状態："+cs);
+        if (cs==="failed"){
+          if (state==="stopping") return;
+          logError("ピア接続が失敗しました（自動再試行はしません）");
+          showError("接続が切れました。診断ログを確認のうえ、手動で再開してください。");
+          finishFromServer("PeerConnection failed");
+        } else if (cs==="disconnected"){
+          if (state==="live") enterRecovery(mySeq, "PeerConnection disconnected");
+        } else if (cs==="connected"){
+          exitRecovery(mySeq); maybeGoLive(mySeq, pair);
+        } else if (cs==="closed"){
+          if (state==="live"||state==="recovering") finishFromServer("PeerConnection closed");
+        }
+      };
+      myPc.ontrack=function(e){
+        if (!sessionIsCurrent(mySeq)) return;
+        logOk("訳音声トラックを受信しました（kind="+e.track.kind+"）。スピーカーから再生します");
+        if (e.streams && e.streams[0]) remoteAudio.srcObject=e.streams[0];
+        else { var ms=new MediaStream(); ms.addTrack(e.track); remoteAudio.srcObject=ms; }
+        attemptRemotePlay(mySeq);
+      };
+      streamRef.getAudioTracks().forEach(function(tr2){ myPc.addTrack(tr2, streamRef); });
+
+      var myDc=myPc.createDataChannel("oai-events");
+      sess.dc=myDc; dc=myDc;
+      myDc.onopen=function(){
+        if (!sessionIsCurrent(mySeq)) return;
+        logOk("データチャネル（oai-events）が開きました");
+        try{
+          myDc.send(JSON.stringify({ type:"session.update", session:{ audio:{ output:{ language: pair.tgt.rt } } } }));
+          logInfo("session.update を送信（訳先言語="+pair.tgt.rt+" を再確認）");
+        }catch(e){ logWarn("session.update の送信に失敗："+(e&&e.message?e.message:e)); }
+        maybeGoLive(mySeq, pair);
+      };
+      myDc.onmessage=function(m){ if (sessionIsCurrent(mySeq)) handleEvent(m.data); };
+      myDc.onerror=function(e){ if (sessionIsCurrent(mySeq)) logError("データチャネルエラー："+(e&&e.message?e.message:"詳細不明")); };
+      myDc.onclose=function(){
+        if (!sessionIsCurrent(mySeq)) return;
+        logInfo("データチャネルが閉じました");
+        /* (2) 予期しない DataChannel close を状態に接続する */
+        if (state==="live"||state==="recovering"||state==="connecting"){
+          showError("データチャネルが切断されました。セッションを終了します。");
+          finishFromServer("DataChannel close（予期しない切断）");
+        }
+      };
+
+      logInfo("SDPオファーを作成します");
+      return myPc.createOffer().then(function(offer){
+        return myPc.setLocalDescription(offer).then(function(){ return offer; });
+      });
+    }).then(function(offer){
+      if (!sessionIsCurrent(mySeq)) throw new Error("開始処理が取り消されました");
+      var sess2=activeSession;
+      /* (7) SDP送信直前に期限を確認する */
+      return ensureFreshSecret(sess2, key, pair.tgt.rt).then(function(secret){
+        if (!sessionIsCurrent(mySeq)) throw new Error("開始処理が取り消されました");
+        logInfo("SDPオファーを送信します：POST "+CONFIG.CALLS_URL);
+        var fopts={ method:"POST", headers:{ "Authorization":"Bearer "+secret.value, "Content-Type":"application/sdp" }, body: offer.sdp };
+        if (sess2.abortSignal) fopts.signal=sess2.abortSignal;
+        return fetch(CONFIG.CALLS_URL, fopts);
+      });
+    }).then(function(res){
+      return res.text().then(function(text){
+        if (!res.ok) throw new Error("SDP交換に失敗 "+parseApiError(res.status, text));
+        if (!sessionIsCurrent(mySeq)) throw new Error("開始処理が取り消されました");
+        logOk("SDPアンサーを受信しました。リモート記述を設定します（この時点ではまだLIVEにしません）");
+        connDetail.textContent="SDP設定完了。ピア接続とデータチャネルの確立を待っています…";
+        return activeSession.pc.setRemoteDescription({ type:"answer", sdp:text });
+      });
+    }).then(function(){
+      if (!sessionIsCurrent(mySeq)) return;
+      /* (4) ここではLIVEにしない。maybeGoLive が connected + open を確認して遷移する */
+      maybeGoLive(mySeq, pair);
+    }).catch(function(e){
+      if (!sessionIsCurrent(mySeq)) return;
+      if (state==="stopping"){ logInfo("停止処理中のため接続エラーを無視しました："+(e&&e.message?e.message:e)); return; }
+      if (e && e.name==="AbortError"){ logWarn("接続処理が中断されました"); return; }
+      var msg=(e&&e.message)?e.message:String(e);
+      if (e && (e.name==="NotAllowedError" || e.name==="PermissionDeniedError")){
+        msg="マイクの使用が許可されませんでした。ブラウザのアドレスバー付近の設定で、このサイトのマイク許可を確認してから再試行してください。元のエラー："+msg;
+      } else if (e && e.name==="NotFoundError"){
+        msg="使えるマイクが見つかりませんでした。マイクが接続されているか確認してください。元のエラー："+msg;
+      }
+      clearConnectTimer();
+      failStart(mySeq, "接続に失敗しました："+msg+"（自動再試行はしません）");
+    });
+  }
+
+  /* ---------- セッション停止 ---------- */
+  function stopSession(reason){
+    /* (1) stopping中の追加の停止要求は無視する。再入防止 */
+    if (state==="stopping"){
+      logInfo("停止処理中のため、追加の停止要求を無視しました（理由："+reason+"）");
+      return;
+    }
+    if (state!=="live" && state!=="connecting" && state!=="recovering"){
+      /* 待機中に呼ばれた場合は現在の資源だけ片付ける */
+      cleanupSession();
+      setState("idle", "待機中");
+      return;
+    }
+    var seq=activeSession?activeSession.seq:null;
+    var sess=activeSession;
+    /* (1) 停止処理に入ったら監視タイマーを止める */
+    stopTimer(); clearRecoveryTimer(); clearConnectTimer();
+    if (sess && sess.abort){ try{ sess.abort.abort(); }catch(e){} }
+    setState("stopping", "停止中…");
+    logInfo("セッションを停止します（理由："+reason+"）");
+
+    /* (3) まず入力を止める：マイクを無効化し、メーターも止める（pc/dcは残して出力を受ける） */
+    if (sess && sess.stream){
+      sess.stream.getAudioTracks().forEach(function(tr){ try{ tr.enabled=false; }catch(e){} });
+    }
+    stopMeter();
+    if (segmentTimer){ clearTimeout(segmentTimer); segmentTimer=null; }
+
+    if (sess && sess.dc && sess.dc.readyState==="open"){
+      try{ sess.dc.send(JSON.stringify({ type:"session.close" })); logInfo("session.close を送信しました（残りの出力を上限時間つきで受け付けます）"); }
+      catch(e){ logWarn("session.close の送信に失敗："+(e&&e.message?e.message:e)); }
+    }
+    /* (3) 固定の短い打ち切りはしない。最後の出力から DRAIN_IDLE_MS 静かになるか、
+       DRAIN_MAX_MS の上限に達するまで待ち、最後にもう一度 flush してから片付ける */
+    var drainStartedAt=Date.now();
+    lastOutputAt=Date.now();
+    var finishDrain=function(){
+      drainTimer=null;
+      if (seq!=null && !sessionIsCurrent(seq)){
+        logInfo("古いセッションの停止後片付けをスキップしました（新しいセッションを保護）");
+        return;
+      }
+      flushSegment("（停止時・最終確定）");
+      var elapsedTxt=$("timer").textContent;
+      cleanupSessionFor(seq);
+      setState("idle", "待機中");
+      renderLive();
+      logOk("セッション終了。経過時間 "+elapsedTxt+" でした");
+      toast("通訳を停止しました");
+    };
+    var checkDrain=function(){
+      if (seq!=null && !sessionIsCurrent(seq)) return;
+      var now=Date.now();
+      if (now-lastOutputAt>=CONFIG.DRAIN_IDLE_MS || now-drainStartedAt>=CONFIG.DRAIN_MAX_MS){
+        finishDrain();
+      } else {
+        drainTimer=setTimeout(checkDrain, 150);
+      }
+    };
+    /* 入力が止まっており新規出力がなければ、最低でも少し待ってから確定する */
+    drainTimer=setTimeout(checkDrain, 150);
+  }
+
+  startBtn.addEventListener("click", startSession);
+  stopBtn.addEventListener("click", function(){ stopSession("ユーザー操作"); });
+  window.addEventListener("beforeunload", function(){
+    if (activeSession){
+      if (activeSession.stream) activeSession.stream.getTracks().forEach(function(tr){ try{ tr.stop(); }catch(e){} });
+      if (activeSession.pc){ try{ activeSession.pc.close(); }catch(e){} }
+    }
+  });
+  $("playAudioBtn").addEventListener("click", function(){ attemptRemotePlay(activeSession?activeSession.seq:null); });
+
+  /* ---------- 初期化 ---------- */
+  refreshLangUI();
+  refreshKeyStatus();
+  renderLive();
+  setState("idle", "待機中");
+  logInfo("リアルタイム翻訳ライブ 起動");
+  logInfo("方式：Realtime Translation（model="+CONFIG.MODEL+"／文字起こし="+CONFIG.TRANSCRIPTION_MODEL+"）");
+  logInfo("接続先："+CONFIG.CLIENT_SECRETS_URL+" → "+CONFIG.CALLS_URL+"（WebRTC）");
+  logInfo("アプリ側の自動停止（目安）："+(CONFIG.WARN_SECONDS/60)+"分で警告、"+(CONFIG.MAX_SECONDS/60)+"分で自動停止");
+  if (apiKey) logOk("保存済みAPIキーを読み込みました（逐次方式アプリと共通の保存場所）");
+  else logWarn("APIキーが未設定です。下のセットアップ手順でキーを保存してください");
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) logError("この環境では getUserMedia が使えません。マイク許可の出る通常ブラウザ（Safari等）で開いてください");
+  if (typeof RTCPeerConnection==="undefined") logError("このブラウザはWebRTCに対応していません");
+})();
+</script>
+  </body>
+</html>

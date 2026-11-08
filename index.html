@@ -129,6 +129,22 @@
       .langnote{font-size:.82rem;color:var(--ink2);margin:11px 0 0}
       .langwarn{display:none;margin-top:10px;background:var(--amber-soft);border:1px solid var(--amber);border-radius:10px;padding:9px 12px;font-size:.86rem}
       .langwarn.show{display:block}
+      /* mode switch */
+      .modeseg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:14px}
+      @media (max-width:560px){.modeseg{grid-template-columns:1fr}}
+      .modebtn{border:1.5px solid var(--line2);background:var(--panel2);color:var(--ink);border-radius:12px;padding:12px 14px;text-align:left;cursor:pointer;font-family:inherit}
+      .modebtn b{font-size:.98rem;display:block;line-height:1.3}
+      .modebtn span{font-size:.8rem;color:var(--ink2);display:block;margin-top:3px;line-height:1.45}
+      .modebtn.active{border-color:var(--teal);background:var(--teal-soft);box-shadow:inset 0 0 0 1px var(--teal)}
+      .modebtn.active b{color:var(--teal)}
+      .modebtn:disabled{opacity:.5;cursor:default}
+      .listennote{display:none;background:var(--teal-soft);border:1px solid var(--teal);border-radius:10px;padding:11px 13px;font-size:.88rem;margin-bottom:12px;line-height:1.6}
+      .listennote.show{display:block}
+      .listennote b{color:var(--teal)}
+      .detectedpill{display:inline-flex;align-items:center;gap:6px;font-size:.78rem;font-weight:700;border:1px solid var(--line2);background:var(--panel2);color:var(--ink2);border-radius:99px;padding:3px 10px;margin-left:6px;vertical-align:middle}
+      .detectedpill.found{border-color:var(--teal);color:var(--teal);background:var(--teal-soft)}
+      .langrow.is-listen{opacity:.92}
+      .langrow.is-listen select{background:var(--teal-soft)}
 
       /* transport controls */
       .transport{display:flex;flex-wrap:wrap;gap:12px;align-items:center}
@@ -275,8 +291,13 @@
 
       <!-- 言語ペア -->
       <section class="panel" aria-label="言語ペア">
-        <h2>言語ペア<span class="h2note">原文の言語はモデルが自動で聞き分けます。訳先の言語がセッションに設定されます</span></h2>
-        <div class="langrow">
+        <h2>言語ペア・聞き取りモード<span class="h2note">通常は訳先を設定します。聞き取りモードでは入力を自動判定して日本語に固定します</span></h2>
+        <div class="modeseg" role="group" aria-label="モード切替">
+          <button class="modebtn active" id="modeNormalBtn" type="button"><b>通常モード</b><span>下で言語ペアを選んで通訳します。自分が話して外国語で聞かせたいときはこちら。</span></button>
+          <button class="modebtn" id="modeListenBtn" type="button"><b>聞き取り（自動判定 → 日本語）</b><span>相手が何語で話しても自動で聞き分け、日本語の訳文・訳音声で受け取ります。</span></button>
+        </div>
+        <div class="listennote" id="listenNote" role="note"><b>聞き取りモード ON：</b>入力言語は指定しません（<span class="mono">gpt-realtime-translate</span> の自動判定に任せます）。訳先は<strong>日本語（ja）に固定</strong>です。下の言語ペアは使われません。判定できた入力言語は、原文欄の見出しとこの欄に可能な範囲で表示します。<div style="margin-top:6px">判定した入力言語：<span class="detectedpill" id="detectedPill">まだ判定できていません</span></div></div>
+        <div class="langrow" id="langRow">
           <div class="langfield">
             <label for="srcLang">話す言語（原文）</label>
             <select id="srcLang"></select>
@@ -335,6 +356,7 @@
           <div class="livehead">
             <span class="livetag">原文</span>
             <span class="livelang" id="srcLiveLang">日本語</span>
+            <span class="detectedpill" id="detectedPillLive" style="display:none">自動判定</span>
             <span class="livestate" id="srcLiveState"></span>
           </div>
           <div class="livetext" id="srcLiveText"><span class="placeholder">通訳を開始すると、話した内容の文字起こしがここに流れてきます。</span></div>
@@ -493,6 +515,10 @@
      新しい入力が始まっても（特に訳文は次の訳デルタが来るまで）消さない */
   var prevSrc="", prevTgt="";
   var history=[];
+  var listenMode=false;
+  var savedPairBeforeListen=null;
+  var detectedLangName="";
+  var detectedLangDetail="";
   var lastEventLogAt={};
   var connectTimer=null, recoveryTimer=null, drainTimer=null;
   var lastOutputAt=0, recovering=false;
@@ -517,9 +543,10 @@
     startBtn.style.display=busy?"none":"inline-flex";
     stopBtn.style.display=busy?"inline-flex":"none";
     stopBtn.disabled=!(s==="live"||s==="connecting"||s==="recovering");
-    srcSel.disabled=busy; tgtSel.disabled=busy; swapBtn.disabled=busy;
+    srcSel.disabled=busy||listenMode; tgtSel.disabled=busy||listenMode; swapBtn.disabled=busy||listenMode;
+    var mb1=$("modeNormalBtn"), mb2=$("modeListenBtn"); if(mb1) mb1.disabled=busy; if(mb2) mb2.disabled=busy;
     var chips=document.querySelectorAll("#presets .chip");
-    for (var i=0;i<chips.length;i++) chips[i].disabled=busy;
+    for (var i=0;i<chips.length;i++) chips[i].disabled=busy||listenMode;
     $("micMuteBtn").disabled=!(s==="live"||s==="recovering");
     if (s==="idle"){ connDetail.textContent=""; setPlaybackStatus(playbackBlocked?"再生待ち（要タップ）":"未開始", playbackBlocked?"blocked":""); }
   }
@@ -531,10 +558,86 @@
   });
   srcSel.value="ja"; tgtSel.value="zh-CN";
 
+  function langNameFromCode(code){
+    if(!code) return "";
+    var c=String(code).toLowerCase();
+    var map={"ja":"日本語","jpn":"日本語","zh":"中国語","zh-cn":"中国語（簡体字）","zh-tw":"中国語（繁体字）","en":"英語","ko":"韓国語","th":"タイ語","vi":"ベトナム語","es":"スペイン語","fr":"フランス語","de":"ドイツ語","pt":"ポルトガル語","id":"インドネシア語","it":"イタリア語","ru":"ロシア語","ar":"アラビア語","hi":"ヒンディー語"};
+    if(map[c]) return map[c];
+    for(var i=0;i<LANGS.length;i++){ if(LANGS[i].code.toLowerCase()===c || (LANGS[i].rt && LANGS[i].rt.toLowerCase()===c)) return LANGS[i].name; }
+    return String(code);
+  }
+  function guessLangFromText(text){
+    if(!text) return "";
+    var s=String(text);
+    if(/[\u3040-\u309f\u30a0-\u30ff]/.test(s)) return "日本語";
+    if(/[\uac00-\ud7a3]/.test(s)) return "韓国語";
+    if(/[\u0e00-\u0e7f]/.test(s)) return "タイ語";
+    if(/[\u0400-\u04ff]/.test(s)) return "ロシア語圏の言語";
+    if(/[\u0600-\u06ff]/.test(s)) return "アラビア語圏の言語";
+    if(/[\u4e00-\u9fff]/.test(s)) return "中国語";
+    if(/[àâäéèêëîïôöùûüçñ]/i.test(s)) return "欧州言語（文字からの推定）";
+    if(/[a-zA-Z]{3,}/.test(s)) return "英語など（ラテン文字）";
+    return "";
+  }
+  function updateDetectedDisplay(){
+    var pill=$("detectedPill"), livePill=$("detectedPillLive");
+    var label=detectedLangName ? (detectedLangName+(detectedLangDetail?"（"+detectedLangDetail+"）":"")) : "まだ判定できていません";
+    if(pill){ pill.textContent=listenMode?label:"—"; pill.classList.toggle("found", !!detectedLangName); }
+    if(livePill){
+      if(listenMode){ livePill.style.display="inline-flex"; livePill.textContent=detectedLangName?("判定："+detectedLangName):"自動判定"; livePill.classList.toggle("found", !!detectedLangName); }
+      else { livePill.style.display="none"; }
+    }
+    if(listenMode){
+      $("srcLiveLang").textContent=detectedLangName?("自動判定 → "+detectedLangName):"自動判定";
+    }
+  }
+  function noteDetected(codeOrName, detail, sourceText){
+    var name="";
+    if(codeOrName) name=langNameFromCode(codeOrName);
+    if(!name && sourceText) { name=guessLangFromText(sourceText); detail=detail||"文字からの推定"; }
+    if(!name) return;
+    if(name!==detectedLangName){ detectedLangName=name; detectedLangDetail=detail||""; logInfo("入力言語の判定："+name+(detectedLangDetail?"（"+detectedLangDetail+"）":"")); }
+    else if(detail && !detectedLangDetail){ detectedLangDetail=detail; }
+    updateDetectedDisplay();
+  }
+  function effectivePair(){
+    if(listenMode) return { src:{code:"auto", name:"自動判定", rt:null}, tgt:langByCode("ja") };
+    return { src:langByCode(srcSel.value), tgt:langByCode(tgtSel.value) };
+  }
+  function setListenMode(on, silent){
+    if(listenMode===on){ updateDetectedDisplay(); return; }
+    if(on){
+      savedPairBeforeListen={ src:srcSel.value, tgt:tgtSel.value };
+      listenMode=true;
+      detectedLangName=""; detectedLangDetail="";
+    } else {
+      listenMode=false;
+      if(savedPairBeforeListen){ srcSel.value=savedPairBeforeListen.src; tgtSel.value=savedPairBeforeListen.tgt; savedPairBeforeListen=null; }
+      detectedLangName=""; detectedLangDetail="";
+    }
+    var nb=$("modeNormalBtn"), lb=$("modeListenBtn");
+    if(nb) nb.classList.toggle("active", !listenMode);
+    if(lb) lb.classList.toggle("active", listenMode);
+    var note=$("listenNote"); if(note) note.classList.toggle("show", listenMode);
+    var row=$("langRow"); if(row) row.classList.toggle("is-listen", listenMode);
+    srcSel.disabled=listenMode||state==="live"||state==="connecting"; tgtSel.disabled=listenMode||state==="live"||state==="connecting"; swapBtn.disabled=listenMode||state==="live"||state==="connecting";
+    var chips=document.querySelectorAll("#presets .chip"); for(var i=0;i<chips.length;i++) chips[i].disabled=listenMode;
+    if(!silent) logInfo(listenMode?"聞き取りモード ON：入力言語は自動判定、訳先は日本語（ja）に固定します":"通常モードに戻しました："+langByCode(srcSel.value).name+" → "+langByCode(tgtSel.value).name);
+    refreshLangUI();
+  }
   function refreshLangUI(){
+    if(listenMode){
+      var lt=langByCode("ja");
+      $("srcLiveLang").textContent=detectedLangName?("自動判定 → "+detectedLangName):"自動判定";
+      $("tgtLiveLang").textContent=lt.name;
+      var w0=$("langWarn"); w0.classList.remove("show"); w0.textContent="";
+      updateDetectedDisplay();
+      return { src:{code:"auto", name:"自動判定", rt:null}, tgt:lt };
+    }
     var s=langByCode(srcSel.value), t=langByCode(tgtSel.value);
     $("srcLiveLang").textContent=s.name;
     $("tgtLiveLang").textContent=t.name;
+    updateDetectedDisplay();
     var chips=document.querySelectorAll("#presets .chip");
     for (var i=0;i<chips.length;i++){
       var c=chips[i];
@@ -548,6 +651,8 @@
     else { w.classList.remove("show"); w.textContent=""; }
     return { src:s, tgt:t };
   }
+  $("modeNormalBtn").addEventListener("click", function(){ setListenMode(false); });
+  $("modeListenBtn").addEventListener("click", function(){ setListenMode(true); toast("聞き取りモード：自動判定 → 日本語"); });
   srcSel.addEventListener("change", function(){ var p=refreshLangUI(); logInfo("言語ペア："+p.src.name+" → "+p.tgt.name); });
   tgtSel.addEventListener("change", function(){ var p=refreshLangUI(); logInfo("言語ペア："+p.src.name+" → "+p.tgt.name); });
   swapBtn.addEventListener("click", function(){
@@ -860,7 +965,8 @@
     var type=ev.type||"(typeなし)";
     if (type.indexOf(".delta")>-1 && state==="stopping") lastOutputAt=Date.now();
     if (type==="session.input_transcript.delta"){
-      if (typeof ev.delta==="string" && ev.delta){ segSrc+=ev.delta; if (!segStartAt) segStartAt=Date.now(); renderLive(); if (state!=="stopping") scheduleSegmentFlush(); else lastOutputAt=Date.now(); }
+      if(listenMode){ var lc1=ev.language||ev.lang||(ev.item&&ev.item.language)||""; if(lc1) noteDetected(lc1,"モデル判定"); else if(segSrc) noteDetected("", "", segSrc); }
+      if (typeof ev.delta==="string" && ev.delta){ segSrc+=ev.delta; if (!segStartAt) segStartAt=Date.now(); if(listenMode && segSrc) noteDetected("", "", segSrc); renderLive(); if (state!=="stopping") scheduleSegmentFlush(); else lastOutputAt=Date.now(); }
       if (shouldLogEvent(type)) logEvent("event: session.input_transcript.delta（原文デルタ受信中）");
       return;
     }
@@ -871,6 +977,7 @@
     }
     if (type==="session.input_transcript.done" || type==="session.input_transcript.completed"){
       var t1=(ev.transcript||ev.text||"");
+      if(listenMode){ var lc2=ev.language||ev.lang||(ev.item&&ev.item.language)||""; if(lc2) noteDetected(lc2,"モデル判定"); else if(t1) noteDetected("", "", t1); }
       if (t1 && segSrc.indexOf(t1)===-1 && t1.length>segSrc.length) segSrc=t1;
       logEvent("event: "+type+(t1?"："+t1.slice(0,120):""));
       renderLive(); if (state!=="stopping") scheduleSegmentFlush(); else lastOutputAt=Date.now();
@@ -1060,9 +1167,9 @@
     setState("connecting", "接続中…");
     setPlaybackStatus("接続待ち", "");
     connDetail.textContent="マイクとセッションを準備しています";
-    logInfo("通訳開始："+pair.src.name+" → "+pair.tgt.name+"（訳先コード："+pair.tgt.rt+"／原文は自動検出）");
+    logInfo("通訳開始："+pair.src.name+" → "+pair.tgt.name+"（訳先コード："+pair.tgt.rt+"／原文は自動検出）"+(listenMode?"［聞き取りモード：入力言語を指定せず自動判定、訳先は日本語に固定］":""));
     /* 新しいセッションでは前セッションの結果を持ち越さない（保持はセッション内のみ） */
-    segSrc=""; segTgt=""; prevSrc=""; prevTgt=""; renderLive();
+    segSrc=""; segTgt=""; prevSrc=""; prevTgt=""; detectedLangName=""; detectedLangDetail=""; updateDetectedDisplay(); renderLive();
 
     /* (4) 接続処理全体のタイムアウト */
     clearConnectTimer();

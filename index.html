@@ -489,6 +489,9 @@
   var startedAt=0, timerInt=null, warned=false;
   var audioCtx=null, analyser=null, meterRAF=null, meterSrcNode=null;
   var segmentTimer=null, segSrc="", segTgt="", segStartAt=0;
+  /* 直前に確定した原文／訳文。ライブ欄では次のデルタが届く直前まで保持し、
+     新しい入力が始まっても（特に訳文は次の訳デルタが来るまで）消さない */
+  var prevSrc="", prevTgt="";
   var history=[];
   var lastEventLogAt={};
   var connectTimer=null, recoveryTimer=null, drainTimer=null;
@@ -682,12 +685,19 @@
   /* ---------- ライブ文字起こし ---------- */
   function renderLive(){
     var sEl=$("srcLiveText"), tEl=$("tgtLiveText");
+    /* 表示の優先順位はチャネルごとに独立：現在のセグメント → 前の確定結果 → プレースホルダ。
+       原文の入力が始まっても訳文欄は前の訳文を保持し、訳文自身の次のデルタが
+       届いた瞬間に初めて置き換わる（次の翻訳が走っている間も前を確認できる）。 */
     if (segSrc){ sEl.innerHTML=esc(segSrc)+(state==="live"?'<span class="caret"></span>':""); }
+    else if (prevSrc){ sEl.innerHTML=esc(prevSrc); }
     else if (state==="live"){ sEl.innerHTML='<span class="placeholder">聞き取り中…話してください。</span>'; }
+    else { sEl.innerHTML='<span class="placeholder">通訳を開始すると、話した内容の文字起こしがここに流れてきます。</span>'; }
     if (segTgt){ tEl.innerHTML=esc(segTgt)+(state==="live"?'<span class="caret"></span>':""); }
+    else if (prevTgt){ tEl.innerHTML=esc(prevTgt); }
     else if (state==="live"){ tEl.innerHTML='<span class="placeholder">訳音声と訳文がここに流れます…</span>'; }
-    $("srcLiveState").textContent=segSrc?"文字起こし中":"";
-    $("tgtLiveState").textContent=segTgt?"翻訳中":"";
+    else { tEl.innerHTML='<span class="placeholder">訳文がここに流れ、同時に訳音声がスピーカーから再生されます。</span>'; }
+    $("srcLiveState").textContent=segSrc?"文字起こし中":(prevSrc?"前の結果を表示中":"");
+    $("tgtLiveState").textContent=segTgt?"翻訳中":(prevTgt?"前の結果を表示中":"");
   }
   function scheduleSegmentFlush(){
     if (segmentTimer) clearTimeout(segmentTimer);
@@ -697,6 +707,10 @@
     if (segmentTimer){ clearTimeout(segmentTimer); segmentTimer=null; }
     var s=segSrc.trim(), t=segTgt.trim();
     segSrc=""; segTgt="";
+    /* 確定した内容は履歴へ送ると同時に「前の結果」として保持する。
+       ライブ欄の見た目は変わらず、次のデルタが届くまで残り続ける */
+    if (s) prevSrc=s;
+    if (t) prevTgt=t;
     if (!s && !t){ renderLive(); return; }
     /* (5) 原文と訳文をペアとして保存しない。それぞれ独立した時系列レコードにする */
     var at=clockNow(), el=startedAt?fmtElapsed((Date.now()-startedAt)/1000):"00:00";
@@ -1047,7 +1061,8 @@
     setPlaybackStatus("接続待ち", "");
     connDetail.textContent="マイクとセッションを準備しています";
     logInfo("通訳開始："+pair.src.name+" → "+pair.tgt.name+"（訳先コード："+pair.tgt.rt+"／原文は自動検出）");
-    segSrc=""; segTgt=""; renderLive();
+    /* 新しいセッションでは前セッションの結果を持ち越さない（保持はセッション内のみ） */
+    segSrc=""; segTgt=""; prevSrc=""; prevTgt=""; renderLive();
 
     /* (4) 接続処理全体のタイムアウト */
     clearConnectTimer();
